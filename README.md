@@ -1,161 +1,104 @@
-# 🕵️ TP Sécurité Système - Scripts de Processus Avancés
+# TP Sécurité Système : Processus Furtifs et Autonomes
 
-Ce dépôt contient deux scripts développés dans le cadre d'un TP de sécurité système portant sur les processus cachés et l'auto-propulsion sécurisée.
+Ce projet, réalisé dans le cadre d'un TP de sécurité système, explore les techniques avancées de manipulation de processus sous Unix/Linux. Il présente deux scripts : `fog`, un processus conçu pour se dissimuler, et `autonom`, un processus capable de s'auto-propulser vers un autre système.
 
 ## 📋 Sommaire
 
-- [Hack #3 - Processus caché dans le brouillard](#hack-3---processus-caché-dans-le-brouillard)
-- [Hack #6 - Processus autonome](#hack-6---processus-autonome)
-- [Installation et utilisation](#installation-et-utilisation)
-- [Tests et vérification](#tests-et-vérification)
+- Script `fog` : Processus Furtif
+- Script `autonom` : Processus Auto-Propulsé
+- Prérequis
+- Avertissement Éthique
 
 ---
 
-## 🔍 Hack #3 - Processus caché dans le brouillard
+## 🌫️ Script `fog` : Processus Furtif
 
-### Script : `fog`
+Le script `fog` lance un processus persistant qui cherche à se fondre parmi les processus légitimes du système.
 
-Le script `fog` est conçu pour créer un processus qui se cache parmi les processus système en utilisant plusieurs techniques d'obfuscation.
+#### Techniques mises en œuvre
+*   **Camouflage du nom :** Le processus se renomme en `[kworker/0:0-events]` pour imiter un *worker* légitime du noyau.
+*   **Détachement de session :** Utilise `setsid` pour s'exécuter dans une nouvelle session, totalement indépendante du terminal de lancement.
+*   **Architecture robuste :** Un script parent lance un processus enfant entièrement autonome, puis se termine proprement.
+*   **Persistance et traçabilité :** Le processus reste actif et laisse une preuve de vie périodique dans un fichier de log et une base de données SQLite pour permettre la vérification de son activité.
 
-### 🎯 Objectifs atteints
+#### Utilisation et Vérification
+1.  **Lancement :**
+    ```bash
+    ./fog
+    ```
+2.  **Vérification de l'activité :**
+    ```bash
+    # Chercher le processus camouflé
+    ps aux | grep '\[k]worker/0:0-events'
 
-- **Nom de processus camouflé** : Utilise le nom `[kworker/0:0-events]` qui ressemble à un processus kernel
-- **Détachement complet** : Se détache du terminal et redirige toutes les entrées/sorties vers `/dev/null`
-- **Utilisation de `setsid`** : Crée une nouvelle session pour éviter d'être lié au terminal parent
-- **Traces persistantes** : Enregistre son activité dans deux endroits :
-  - Fichier texte : `~/.cache/fog_trace`
-  - Base de données SQLite : `~/.local/share/fog.db`
+    # Consulter les traces
+    $ tail ~/.cache/fog_trace
+    [2025-07-21 00:47:45] Processus actif - PID: 4149
+    [2025-07-21 00:48:15] Processus actif - PID: 4149
 
-### 🔧 Fonctionnement
-
-1. **Initialisation** : Crée la structure de fichiers nécessaire
-2. **Camouflage** : Change son nom de processus et se détache
-3. **Persistance** : Tourne en arrière-plan avec une vérification toutes les 30 secondes
-4. **Tracabilité** : Enregistre chaque cycle d'exécution
-
-### 📊 Vérification de l'activité
-
-```bash
-# Vérifier les traces
-tail -f ~/.cache/fog_trace
-
-# Vérifier la base de données
-sqlite3 ~/.local/share/fog.db "SELECT * FROM logs ORDER BY timestamp DESC LIMIT 5;"
-```
+    $ sqlite3 ~/.local/share/fog.db "SELECT * FROM logs ORDER BY id DESC LIMIT 1;"
+    2|2025-07-20 22:48:15|4149|active
+    ```
 
 ---
 
-## 🚀 Hack #6 - Processus autonome
+## 🚀 Script `autonom` : Processus Auto-Propulsé
 
-### Script : `autonom`
+Le script `autonom` est un processus capable de s'auto-propulser de manière sécurisée et autonome vers un autre système.
 
-Le script `autonom` est capable de s'auto-propulser vers une machine distante de manière sécurisée et autonome.
+#### Techniques mises en œuvre
+*   **Auto-propulsion :** Utilise `scp` pour se copier et `ssh` pour s'exécuter à distance.
+*   **Décision autonome :** Simule une prise de décision en attendant un délai aléatoire avant d'agir.
+*   **Transport sécurisé :** Le transfert est chiffré via SSH et l'authentification est assurée par une paire de clés dédiée (`~/.ssh/autonom_key`).
+*   **Vérification post-atterrissage :** Confirme sa propre exécution sur la machine cible et vérifie que le compte utilisateur n'est **pas root (UID ≠ 0)**, conformément à l'énoncé.
+*   **Nettoyage des traces :** Efface sa présence (le fichier script) sur la machine de départ après une propulsion réussie.
 
-### 🎯 Objectifs atteints
+#### Utilisation (Processus en 2 étapes)
 
-- **Auto-propulsion** : Transfert automatique vers une machine distante
-- **Sécurité** : Utilisation de clés SSH temporaires et chiffrement
-- **Autonomie** : Délai aléatoire entre 2 et 40 secondes avant le transfert
-- **Vérification** : Confirme l'atterrissage sur la machine distante
-- **Nettoyage** : Supprime ses traces sur la machine d'origine
+1.  **Étape 1 : Configuration initiale (une seule fois)**
+    *   Lancez le script : `./autonom <hôte_distant> <user_distant>`
+    *   Le script va créer une clé SSH et se mettre en pause.
+    *   Dans un **second terminal**, copiez la clé sur l'hôte distant avec la commande `ssh-copy-id` qui vous est fournie.
+    *   Retournez au premier terminal et appuyez sur `Entrée`.
 
-### 🔧 Fonctionnement
+2.  **Étape 2 : Lancement autonome**
+    *   Relancez la même commande : `./autonom <hôte_distant> <user_distant>`
+    *   Le script s'exécutera maintenant sans aucune interaction.
 
-1. **Préparation** : Génère des clés SSH temporaires et crée une archive du script
-2. **Attente** : Délai aléatoire pour simuler une décision autonome
-3. **Transfert** : Copie sécurisée vers la machine distante via SCP
-4. **Lancement** : Démarre automatiquement sur la machine cible
-5. **Vérification** : Confirme que le processus tourne sur la destination
-6. **Nettoyage** : Supprime toutes les traces sur la machine source
-
-### 🔐 Sécurité implémentée
-
-- **Clés SSH éphémères** : Générées à chaque exécution et supprimées après usage
-- **Transfert chiffré** : Utilisation de SCP avec authentification par clé
-- **Suppression des traces** : Nettoyage complet de l'historique et des fichiers
-- **Permissions minimales** : Fonctionne avec un simple compte guest
-
-### 📡 Utilisation
-
-```bash
-# Transfert vers une machine distante
-./autonom remote.example.com guest 22
-
-# Transfert avec paramètres personnalisés
-./autonom 192.168.1.100 guestuser 2222
-```
+#### Vérification
+*   **Sur l'hôte distant :** Vérifiez que le processus a bien atterri.
+    ```bash
+    ssh -i ~/.ssh/autonom_key <user_distant>@<hôte_distant> "ps aux | grep '[a]utonom.sh --landed'"
+    ```
+*   **Sur l'hôte de départ :** Vérifiez que le script s'est bien auto-détruit (si la mission a réussi).
+    ```bash
+    ls -l /root/TP-BSYSDISTSEC2/autonom.sh
+    # Doit retourner "No such file or directory"
+    ```
+*   **Consulter le journal de bord de la mission :**
+    ```bash
+    cat ~/.autonom_trace
+    ```
 
 ---
 
-## 🛠️ Installation et utilisation
+## 🛠️ Prérequis
 
-### Prérequis
+1.  **Rendre les scripts exécutables :**
+    ```bash
+    chmod +x fog autonom
+    ```
+2.  **Installer les dépendances :**
+    ```bash
+    # Pour le script 'fog'
+    sudo apt-get update && sudo apt-get install -y sqlite3
 
-```bash
-# Rendre les scripts exécutables
-chmod +x fog autonom
-
-# Installer SQLite3 (pour fog)
-sudo apt-get install sqlite3  # Ubuntu/Debian
-# ou
-brew install sqlite3          # macOS
-```
-
-### Installation rapide
-
-```bash
-git clone <repository-url>
-cd <repository-name>
-chmod +x fog autonom
-```
+    # Pour le script 'autonom' (copie de clé simplifiée)
+    sudo apt-get install -y openssh-client
+    ```
 
 ---
 
-## 🧪 Tests et vérification
+## ⚠️ Avertissement Éthique
 
-### Test du script fog
-
-```bash
-# Lancer le processus
-./fog
-
-# Vérifier qu'il est actif (difficile à trouver !)
-ps aux | grep kworker
-# ou
-pgrep -f "kworker"
-
-# Vérifier les traces
-sqlite3 ~/.local/share/fog.db "SELECT COUNT(*) FROM logs;"
-```
-
-### Test du script autonom
-
-```bash
-# Test local (boucle sur localhost)
-./autonom localhost $USER
-
-# Vérifier le transfert
-ssh localhost "ps aux | grep autonom"
-
-# Vérifier les traces
-cat ~/.autonom_trace
-```
-
-### 📝 Notes importantes
-
-- Ces scripts sont conçus à des fins éducatives
-- **Utilisez uniquement dans des environnements contrôlés et avec autorisation**
-- Les scripts incluent des mécanismes de nettoyage automatique
-- Les traces sont conservées pour permettre l'audit et la vérification
-
-### 🔍 Détection et mitigation
-
-Pour détecter ces types de processus :
-- Surveiller les connexions SSH sortantes
-- Vérifier les processus avec des noms suspects
-- Analyser les fichiers de traces dans les répertoires utilisateur
-- Utiliser des outils comme `auditd` pour surveiller les exécutions
-
----
-
-*Développé dans le cadre d'un TP de sécurité système - 2025*
+Ces scripts ont été développés dans un but purement **éducatif**.
